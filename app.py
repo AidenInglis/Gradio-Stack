@@ -210,11 +210,16 @@ def delete_coupon(coupon_id, state: SessionUser):
         c = db.query(Coupon).get(int(coupon_id))
         if not c:
             return "Not found."
+
+        # Remove all user claims for this coupon first (DB-agnostic)
+        removed = db.query(Claim).filter(Claim.coupon_id == c.id).delete(synchronize_session=False)
+
         db.delete(c)
         db.commit()
-        return "Deleted."
+        return f"Deleted coupon and removed {removed} related claim(s)."
     finally:
         db.close()
+
 
 # ---------- User flows ----------
 MAX_CLAIMS = 2
