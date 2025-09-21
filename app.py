@@ -98,22 +98,22 @@ MEDICAL_SERVICES = [
 def register(email, password, confirm, state: SessionUser):
     email = (email or "").strip().lower()
     if not email or not password:
-        return gr.update(), "Email and password required.", state
+        return "Email and password required.", state
     if "@" not in email:
-        return gr.update(), "Invalid email.", state
+        return "Invalid email.", state
     if password != confirm:
-        return gr.update(), "Passwords do not match.", state
+        return "Passwords do not match.", state
     if len(password) < 6:
-        return gr.update(), "Password must be at least 6 characters.", state
+        return "Password must be at least 6 characters.", state
 
     db = SessionLocal()
     try:
         if db.query(User).filter_by(email=email).first():
-            return gr.update(), "Email already registered.", state
+            return "Email already registered.", state
         user = User(email=email, password_hash=bcrypt.hash(password), role="user")
         db.add(user)
         db.commit()
-        return gr.update(), "Registered! Please log in.", state
+        return "Registered! Please log in.", state
     finally:
         db.close()
 
