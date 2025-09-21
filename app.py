@@ -96,7 +96,8 @@ MEDICAL_SERVICES = [
 
 # ---------- Auth ----------
 def register(email, password, confirm, state: SessionUser):
-    email = (email or "").strip().lower()
+    email = (email or "").strip().lower() # strip and lower email (normalization)
+    # validation
     if not email or not password:
         return "Email and password required.", state
     if "@" not in email:
@@ -108,20 +109,22 @@ def register(email, password, confirm, state: SessionUser):
 
     db = SessionLocal()
     try:
-        if db.query(User).filter_by(email=email).first():
+        if db.query(User).filter_by(email=email).first(): # if user exists (find by email)
             return "Email already registered.", state
-        user = User(email=email, password_hash=bcrypt.hash(password), role="user")
+        user = User(email=email, password_hash=bcrypt.hash(password), role="user") 
         db.add(user)
         db.commit()
         return "Registered! Please log in.", state
     finally:
         db.close()
 
+# function for login - returns new state and message
 def login(email, password, state: SessionUser):
-    email = (email or "").strip().lower()
-    db = SessionLocal()
+    email = (email or "").strip().lower() # strip and lower email (normalization)
+    db = SessionLocal() # new session
     try:
-        user = db.query(User).filter_by(email=email).first()
+        user = db.query(User).filter_by(email=email).first() # filter by email
+         # if no user or password does not match
         if not user or not bcrypt.verify(password, user.password_hash):
             return SessionUser(None, None, None), "Invalid credentials."
         return SessionUser(user.id, user.email, user.role), f"Welcome, {user.email}!"
@@ -133,13 +136,14 @@ def logout(state: SessionUser):
 
 # ---------- Admin CRUD ----------
 def list_coupons_admin(state: SessionUser):
+    # if not admin return empty
     if not is_admin(state):
         return "Unauthorized.", []
-    db = SessionLocal()
+    db = SessionLocal() # db is a new session
     try:
-        items = db.query(Coupon).order_by(Coupon.id.desc()).all()
-        rows = [[c.id, c.code, c.discount, c.service, c.active] for c in items]
-        return "", rows
+        items = db.query(Coupon).order_by(Coupon.id.desc()).all() # get all coupons and order by id desc
+        rows = [[c.id, c.code, c.discount, c.service, c.active] for c in items] # rows are a list of coupons available
+        return "", rows # return empty message and rows
     finally:
         db.close()
 
@@ -156,14 +160,16 @@ def _norm_coupon_inputs(code, discount, service):
         return None, None, None, "All fields required."
     return code, discount, service, None
 
+# adding a new coupon (admins)
 def add_coupon(code, discount, service, active, state: SessionUser):
     if not is_admin(state):
         return "Unauthorized."
+    # validate and normalize inputs related to coupon
     code, discount, service, err = _norm_coupon_inputs(code, discount, service)
     if err: return err
-    db = SessionLocal()
+    db = SessionLocal() # new session
     try:
-        if db.query(Coupon).filter_by(code=code).first():
+        if db.query(Coupon).filter_by(code=code).first(): # if the code already exists
             return "Code already exists."
         db.add(Coupon(code=code, discount=discount, service=service, active=bool(active)))
         db.commit()
@@ -233,11 +239,14 @@ def _claims_left(user_id):
         db.close()
 
 def list_available_coupons(state: SessionUser):
-    if not ensure_logged_in(state):
+    if not ensure_logged_in(state): # if not logged in
         return "Please log in.", [], "Remaining claims: 0"
     db = SessionLocal()
     try:
+        # creating a new query for the coupon table to fetch records of the coupon class
+        # adding filter to query so only coupons that are active are returned
         coupons = db.query(Coupon).filter(Coupon.active == True).order_by(Coupon.id.desc()).all()
+        # transforming a list of coupon objects into a list of lists for gradio dataframe
         rows = [[c.id, c.code, c.discount, c.service] for c in coupons]
         return "", rows, f"Remaining claims: {_claims_left(state.id)}"
     finally:
@@ -248,25 +257,28 @@ def my_claims(state: SessionUser):
         return "Please log in.", []
     db = SessionLocal()
     try:
+        # retrieves and formats a list of coupon claims made by the logged in user
         claims = (db.query(Claim)
+                  # queries database for all claim records where id matches current user id ordered by created at desc
                     .filter(Claim.user_id == state.id)
                     .order_by(Claim.created_at.desc()).all())
+        # transforms list of claim objects into a list of lists for gradio dataframe
         rows = [[cl.coupon.code, cl.coupon.discount, cl.coupon.service, cl.created_at.isoformat()] for cl in claims]
         return f"Remaining claims: {_claims_left(state.id)}", rows
     finally:
         db.close()
 
 def claim_coupon(coupon_id, state: SessionUser):
-    if not ensure_logged_in(state):
+    if not ensure_logged_in(state): # if user isnt logged in
         return "Please log in to claim."
     db = SessionLocal()
     try:
-        if _claims_left(state.id) <= 0:
+        if _claims_left(state.id) <= 0: # if the state id has no claims left
             return "Claim limit reached (max 2)."
         coupon = db.query(Coupon).get(int(coupon_id))
         if not coupon or not coupon.active:
             return "Coupon not available."
-        if db.query(Claim).filter_by(user_id=state.id, coupon_id=coupon.id).first():
+        if db.query(Claim).filter_by(user_id=state.id, coupon_id=coupon.id).first(): # query whether user has already claimed this coupon
             return "You already claimed this coupon."
         db.add(Claim(user_id=state.id, coupon_id=coupon.id))
         db.commit()
